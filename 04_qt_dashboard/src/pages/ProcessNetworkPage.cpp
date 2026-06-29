@@ -4,6 +4,7 @@
 #include "../components/SimpleFormDialog.h"
 
 #include <QAbstractItemView>
+#include <QAbstractSocket>
 #include <QAction>
 #include <QButtonGroup>
 #include <QComboBox>
@@ -29,6 +30,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QToolButton>
 #include <QUdpSocket>
 #include <QVBoxLayout>
@@ -441,90 +443,136 @@ QWidget* ProcessNetworkPage::buildSocketsTab()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
 
-    auto* cardsLayout = new QHBoxLayout();
-    cardsLayout->setSpacing(12);
-    cardsLayout->addWidget(buildSocketCard("TCP Server", true), 1);
-    cardsLayout->addWidget(buildSocketCard("UDP Receiver", false), 1);
-    layout->addLayout(cardsLayout, 1);
+    auto* splitter = new QSplitter(Qt::Horizontal, page);
+    splitter->addWidget(buildSocketServerPanel());
+    splitter->addWidget(buildSocketClientPanel());
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 1);
+    splitter->setChildrenCollapsible(false);
+    layout->addWidget(splitter, 1);
 
     updateSocketUi();
     return page;
 }
 
-QWidget* ProcessNetworkPage::buildSocketCard(const QString& title, bool tcpCard)
+QWidget* ProcessNetworkPage::buildSocketServerPanel()
 {
     auto* card = new QWidget(this);
     card->setObjectName("card");
     auto* layout = new QVBoxLayout(card);
     layout->setContentsMargins(16, 16, 16, 16);
-    layout->setSpacing(10);
+    layout->setSpacing(8);
 
-    auto* heading = new QLabel(title, card);
+    auto* heading = new QLabel("Server", card);
     heading->setObjectName("sectionHeading");
     layout->addWidget(heading);
 
-    auto* sep1 = new QFrame(card);
-    sep1->setFrameShape(QFrame::HLine);
-    layout->addWidget(sep1);
+    auto* controls = new QHBoxLayout();
+    controls->setSpacing(8);
+    controls->addWidget(new QLabel("Protocol", card));
+    serverProtocolCombo = new QComboBox(card);
+    serverProtocolCombo->addItems({"TCP", "UDP"});
+    controls->addWidget(serverProtocolCombo);
+    controls->addWidget(new QLabel("Port", card));
+    serverPortSpin = new QSpinBox(card);
+    serverPortSpin->setRange(1, 65535);
+    serverPortSpin->setValue(8080);
+    controls->addWidget(serverPortSpin);
+    serverToggleButton = new QPushButton(card);
+    connect(serverToggleButton, &QPushButton::clicked, this, &ProcessNetworkPage::startOrStopChatServer);
+    controls->addWidget(serverToggleButton);
+    layout->addLayout(controls);
 
-    auto* status = new QLabel(card);
-    layout->addWidget(status);
+    serverStatusLabel = new QLabel(card);
+    serverStatusLabel->setObjectName("card");
+    serverStatusLabel->setContentsMargins(10, 8, 10, 8);
+    layout->addWidget(serverStatusLabel);
 
-    auto* portRow = new QHBoxLayout();
-    auto* portLabel = new QLabel("Port:", card);
-    auto* portSpin = new QSpinBox(card);
-    portSpin->setRange(1024, 65535);
-    portSpin->setValue(tcpCard ? 8080 : 9090);
-    portRow->addWidget(portLabel);
-    portRow->addWidget(portSpin);
-    portRow->addStretch();
-    layout->addLayout(portRow);
+    serverChatLog = new QPlainTextEdit(card);
+    serverChatLog->setReadOnly(true);
+    serverChatLog->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    serverChatLog->setPlaceholderText("Server messages");
+    layout->addWidget(serverChatLog, 1);
 
-    auto* toggle = new QPushButton(card);
-    connect(toggle, &QPushButton::clicked, this, [this, tcpCard]() {
-        const QString action = tcpCard ? "Lab2 tcp-server" : "Lab2 udp-receiver";
-        if (commandRunner->isRunning(action)) {
-            commandRunner->stop(action);
-            updateSocketUi();
-            return;
-        }
+    auto* sendRow = new QHBoxLayout();
+    sendRow->setSpacing(8);
+    serverMessageEdit = new QLineEdit(card);
+    serverMessageEdit->setPlaceholderText("Reply from server...");
+    serverSendButton = new QPushButton("Send", card);
+    serverSendButton->setObjectName("primaryBtn");
+    connect(serverMessageEdit, &QLineEdit::returnPressed, this, &ProcessNetworkPage::sendServerMessage);
+    connect(serverSendButton, &QPushButton::clicked, this, &ProcessNetworkPage::sendServerMessage);
+    sendRow->addWidget(serverMessageEdit, 1);
+    sendRow->addWidget(serverSendButton);
+    layout->addLayout(sendRow);
 
-        const QString port = QString::number(tcpCard ? tcpPortSpin->value() : udpPortSpin->value());
-        runLab2(tcpCard ? "tcp-server" : "udp-receiver",
-                {port},
-                action,
-                CommandType::LongRunning,
-                tcpCard ? "Dang listen TCP port" : "Dang nhan UDP port");
+    connect(serverProtocolCombo, &QComboBox::currentTextChanged, this, [this]() {
+        stopChatServer();
         updateSocketUi();
     });
-    layout->addWidget(toggle);
-    layout->addStretch();
 
-    auto* sep2 = new QFrame(card);
-    sep2->setFrameShape(QFrame::HLine);
-    layout->addWidget(sep2);
+    return card;
+}
 
-    auto* testButton = actionButton(tcpCard ? "TCP Client Test..." : "UDP Send...");
-    connect(testButton, &QPushButton::clicked, this, [this, tcpCard]() {
-        if (tcpCard) {
-            SimpleFormDialog dialog("TCP client", {{"Host", "127.0.0.1"}, {"Port", QString::number(tcpPortSpin->value())}, {"Message", "hello"}}, false, this);
-            if (dialog.exec() == QDialog::Accepted) runLab2("tcp-client", dialog.values(), "Lab2 tcp-client");
-        } else {
-            SimpleFormDialog dialog("UDP send", {{"IPv4", "127.0.0.1"}, {"Port", QString::number(udpPortSpin->value())}, {"Message", "hello"}}, false, this);
-            if (dialog.exec() == QDialog::Accepted) runLab2("udp-send", dialog.values(), "Lab2 udp-send");
-        }
+QWidget* ProcessNetworkPage::buildSocketClientPanel()
+{
+    auto* card = new QWidget(this);
+    card->setObjectName("card");
+    auto* layout = new QVBoxLayout(card);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(8);
+
+    auto* heading = new QLabel("Client", card);
+    heading->setObjectName("sectionHeading");
+    layout->addWidget(heading);
+
+    auto* controls = new QHBoxLayout();
+    controls->setSpacing(8);
+    controls->addWidget(new QLabel("Protocol", card));
+    clientProtocolCombo = new QComboBox(card);
+    clientProtocolCombo->addItems({"TCP", "UDP"});
+    controls->addWidget(clientProtocolCombo);
+    controls->addWidget(new QLabel("Host", card));
+    clientHostEdit = new QLineEdit(card);
+    clientHostEdit->setText("127.0.0.1");
+    controls->addWidget(clientHostEdit, 1);
+    controls->addWidget(new QLabel("Port", card));
+    clientPortSpin = new QSpinBox(card);
+    clientPortSpin->setRange(1, 65535);
+    clientPortSpin->setValue(8080);
+    controls->addWidget(clientPortSpin);
+    clientToggleButton = new QPushButton(card);
+    connect(clientToggleButton, &QPushButton::clicked, this, &ProcessNetworkPage::startOrStopChatClient);
+    controls->addWidget(clientToggleButton);
+    layout->addLayout(controls);
+
+    clientStatusLabel = new QLabel(card);
+    clientStatusLabel->setObjectName("card");
+    clientStatusLabel->setContentsMargins(10, 8, 10, 8);
+    layout->addWidget(clientStatusLabel);
+
+    clientChatLog = new QPlainTextEdit(card);
+    clientChatLog->setReadOnly(true);
+    clientChatLog->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    clientChatLog->setPlaceholderText("Client messages");
+    layout->addWidget(clientChatLog, 1);
+
+    auto* sendRow = new QHBoxLayout();
+    sendRow->setSpacing(8);
+    clientMessageEdit = new QLineEdit(card);
+    clientMessageEdit->setPlaceholderText("Message from client...");
+    clientSendButton = new QPushButton("Send", card);
+    clientSendButton->setObjectName("primaryBtn");
+    connect(clientMessageEdit, &QLineEdit::returnPressed, this, &ProcessNetworkPage::sendClientMessage);
+    connect(clientSendButton, &QPushButton::clicked, this, &ProcessNetworkPage::sendClientMessage);
+    sendRow->addWidget(clientMessageEdit, 1);
+    sendRow->addWidget(clientSendButton);
+    layout->addLayout(sendRow);
+
+    connect(clientProtocolCombo, &QComboBox::currentTextChanged, this, [this]() {
+        stopChatClient();
+        updateSocketUi();
     });
-    layout->addWidget(testButton);
-
-    if (tcpCard) {
-        tcpStatusLabel = status;
-        tcpPortSpin = portSpin;
-        tcpToggleButton = toggle;
-    } else {
-        udpStatusLabel = status;
-        udpPortSpin = portSpin;
-        udpToggleButton = toggle;
-    }
 
     return card;
 }
@@ -579,6 +627,8 @@ void ProcessNetworkPage::onTabEntered(int tab)
         loadProcessList();
     } else if (tab == 2 && !networkLoaded) {
         loadNetworkInfo();
+    } else if (tab == 3) {
+        updateSocketUi();
     }
 }
 
@@ -788,6 +838,7 @@ QString ProcessNetworkPage::selectedFilePathOrCurrentDir() const
     return selected.isEmpty() ? fileExplorer->currentPath() : selected;
 }
 
+#if 0
 void ProcessNetworkPage::updateSocketUi()
 {
     const bool tcpRunning = commandRunner && commandRunner->isRunning("Lab2 tcp-server");
@@ -817,6 +868,441 @@ void ProcessNetworkPage::updateSocketUi()
         udpToggleButton->style()->unpolish(udpToggleButton);
         udpToggleButton->style()->polish(udpToggleButton);
     }
+}
+
+#endif
+
+bool ProcessNetworkPage::serverIsRunning() const
+{
+    return chatTcpServer || chatUdpServer;
+}
+
+bool ProcessNetworkPage::clientIsActive() const
+{
+    return chatTcpClient || udpClientReady;
+}
+
+bool ProcessNetworkPage::serverUsesTcp() const
+{
+    return !serverProtocolCombo || serverProtocolCombo->currentText() == "TCP";
+}
+
+bool ProcessNetworkPage::clientUsesTcp() const
+{
+    return !clientProtocolCombo || clientProtocolCombo->currentText() == "TCP";
+}
+
+void ProcessNetworkPage::appendSocketLog(QPlainTextEdit* target, const QString& text)
+{
+    if (!target) {
+        return;
+    }
+
+    const QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss.zzz");
+    target->appendPlainText(QString("[%1] %2").arg(timestamp, text));
+
+    while (target->document()->blockCount() > 500) {
+        QTextCursor cursor(target->document());
+        cursor.movePosition(QTextCursor::Start);
+        cursor.select(QTextCursor::BlockUnderCursor);
+        cursor.removeSelectedText();
+        cursor.deleteChar();
+    }
+
+    if (auto* scroll = target->verticalScrollBar()) {
+        scroll->setValue(scroll->maximum());
+    }
+}
+
+void ProcessNetworkPage::startOrStopChatServer()
+{
+    if (serverIsRunning()) {
+        stopChatServer();
+    } else {
+        startChatServer();
+    }
+    updateSocketUi();
+}
+
+void ProcessNetworkPage::startChatServer()
+{
+    stopChatServer();
+
+    const quint16 port = static_cast<quint16>(serverPortSpin ? serverPortSpin->value() : 8080);
+    if (serverUsesTcp()) {
+        chatTcpServer = new QTcpServer(this);
+        connect(chatTcpServer, &QTcpServer::newConnection, this, &ProcessNetworkPage::acceptChatClient);
+
+        if (!chatTcpServer->listen(QHostAddress::AnyIPv4, port)) {
+            appendSocketLog(serverChatLog, QString("TCP listen failed: %1").arg(chatTcpServer->errorString()));
+            chatTcpServer->deleteLater();
+            chatTcpServer = nullptr;
+            return;
+        }
+
+        appendSocketLog(serverChatLog, QString("TCP server listening on 0.0.0.0:%1").arg(port));
+    } else {
+        chatUdpServer = new QUdpSocket(this);
+        connect(chatUdpServer, &QUdpSocket::readyRead, this, &ProcessNetworkPage::readServerUdpData);
+
+        if (!chatUdpServer->bind(QHostAddress::AnyIPv4, port, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+            appendSocketLog(serverChatLog, QString("UDP bind failed: %1").arg(chatUdpServer->errorString()));
+            chatUdpServer->deleteLater();
+            chatUdpServer = nullptr;
+            return;
+        }
+
+        serverUdpPeerAddress.clear();
+        serverUdpPeerPort = 0;
+        appendSocketLog(serverChatLog, QString("UDP server bound on 0.0.0.0:%1").arg(port));
+    }
+}
+
+void ProcessNetworkPage::stopChatServer()
+{
+    for (auto* socket : chatServerClients) {
+        if (!socket) {
+            continue;
+        }
+        socket->disconnect(this);
+        socket->disconnectFromHost();
+        socket->deleteLater();
+    }
+    chatServerClients.clear();
+
+    if (chatTcpServer) {
+        chatTcpServer->close();
+        chatTcpServer->deleteLater();
+        chatTcpServer = nullptr;
+        appendSocketLog(serverChatLog, "TCP server stopped");
+    }
+
+    if (chatUdpServer) {
+        chatUdpServer->close();
+        chatUdpServer->deleteLater();
+        chatUdpServer = nullptr;
+        appendSocketLog(serverChatLog, "UDP server stopped");
+    }
+
+    serverUdpPeerAddress.clear();
+    serverUdpPeerPort = 0;
+}
+
+void ProcessNetworkPage::acceptChatClient()
+{
+    if (!chatTcpServer) {
+        return;
+    }
+
+    while (chatTcpServer->hasPendingConnections()) {
+        auto* socket = chatTcpServer->nextPendingConnection();
+        chatServerClients.append(socket);
+
+        appendSocketLog(serverChatLog,
+                        QString("Client connected: %1:%2")
+                            .arg(socket->peerAddress().toString())
+                            .arg(socket->peerPort()));
+
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+            readServerTcpData(socket);
+        });
+        connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
+            appendSocketLog(serverChatLog,
+                            QString("Client disconnected: %1:%2")
+                                .arg(socket->peerAddress().toString())
+                                .arg(socket->peerPort()));
+            chatServerClients.removeAll(socket);
+            socket->deleteLater();
+            updateSocketUi();
+        });
+        connect(socket, &QAbstractSocket::errorOccurred, this, [this, socket]() {
+            appendSocketLog(serverChatLog, QString("Client socket error: %1").arg(socket->errorString()));
+        });
+    }
+
+    updateSocketUi();
+}
+
+void ProcessNetworkPage::readServerTcpData(QTcpSocket* socket)
+{
+    if (!socket) {
+        return;
+    }
+
+    const QByteArray data = socket->readAll();
+    appendSocketLog(serverChatLog,
+                    QString("Client %1:%2 -> %3")
+                        .arg(socket->peerAddress().toString())
+                        .arg(socket->peerPort())
+                        .arg(QString::fromUtf8(data).trimmed()));
+}
+
+void ProcessNetworkPage::readServerUdpData()
+{
+    if (!chatUdpServer) {
+        return;
+    }
+
+    while (chatUdpServer->hasPendingDatagrams()) {
+        QByteArray data;
+        data.resize(static_cast<int>(chatUdpServer->pendingDatagramSize()));
+        QHostAddress peerAddress;
+        quint16 peerPort = 0;
+        chatUdpServer->readDatagram(data.data(), data.size(), &peerAddress, &peerPort);
+
+        serverUdpPeerAddress = peerAddress.toString();
+        serverUdpPeerPort = peerPort;
+        appendSocketLog(serverChatLog,
+                        QString("UDP %1:%2 -> %3")
+                            .arg(serverUdpPeerAddress)
+                            .arg(serverUdpPeerPort)
+                            .arg(QString::fromUtf8(data).trimmed()));
+    }
+
+    updateSocketUi();
+}
+
+void ProcessNetworkPage::sendServerMessage()
+{
+    const QString message = serverMessageEdit ? serverMessageEdit->text() : QString();
+    if (message.trimmed().isEmpty()) {
+        return;
+    }
+
+    const QByteArray data = message.toUtf8();
+    if (chatTcpServer) {
+        if (chatServerClients.isEmpty()) {
+            appendSocketLog(serverChatLog, "No TCP client connected");
+            return;
+        }
+
+        for (auto* socket : chatServerClients) {
+            if (socket && socket->state() == QAbstractSocket::ConnectedState) {
+                socket->write(data);
+                socket->write("\n");
+            }
+        }
+        appendSocketLog(serverChatLog, QString("Server -> %1 client(s): %2").arg(chatServerClients.size()).arg(message));
+    } else if (chatUdpServer) {
+        if (serverUdpPeerAddress.isEmpty() || serverUdpPeerPort == 0) {
+            appendSocketLog(serverChatLog, "No UDP peer yet");
+            return;
+        }
+        chatUdpServer->writeDatagram(data, QHostAddress(serverUdpPeerAddress), serverUdpPeerPort);
+        appendSocketLog(serverChatLog,
+                        QString("Server -> UDP %1:%2: %3")
+                            .arg(serverUdpPeerAddress)
+                            .arg(serverUdpPeerPort)
+                            .arg(message));
+    }
+
+    serverMessageEdit->clear();
+}
+
+void ProcessNetworkPage::startOrStopChatClient()
+{
+    if (clientIsActive()) {
+        stopChatClient();
+    } else {
+        startChatClient();
+    }
+    updateSocketUi();
+}
+
+void ProcessNetworkPage::startChatClient()
+{
+    stopChatClient();
+
+    const QString host = clientHostEdit ? clientHostEdit->text().trimmed() : "127.0.0.1";
+    const quint16 port = static_cast<quint16>(clientPortSpin ? clientPortSpin->value() : 8080);
+
+    if (clientUsesTcp()) {
+        chatTcpClient = new QTcpSocket(this);
+        connect(chatTcpClient, &QTcpSocket::readyRead, this, &ProcessNetworkPage::readClientTcpData);
+        connect(chatTcpClient, &QTcpSocket::connected, this, [this, host, port]() {
+            appendSocketLog(clientChatLog, QString("Connected to TCP %1:%2").arg(host).arg(port));
+            updateSocketUi();
+        });
+        connect(chatTcpClient, &QTcpSocket::disconnected, this, [this]() {
+            appendSocketLog(clientChatLog, "TCP disconnected");
+            if (chatTcpClient) {
+                chatTcpClient->deleteLater();
+                chatTcpClient = nullptr;
+            }
+            updateSocketUi();
+        });
+        connect(chatTcpClient, &QAbstractSocket::errorOccurred, this, [this]() {
+            if (chatTcpClient) {
+                appendSocketLog(clientChatLog, QString("TCP error: %1").arg(chatTcpClient->errorString()));
+                auto* socket = chatTcpClient;
+                chatTcpClient = nullptr;
+                socket->deleteLater();
+                updateSocketUi();
+            }
+        });
+
+        appendSocketLog(clientChatLog, QString("Connecting to TCP %1:%2...").arg(host).arg(port));
+        chatTcpClient->connectToHost(host, port);
+    } else {
+        chatUdpClient = new QUdpSocket(this);
+        connect(chatUdpClient, &QUdpSocket::readyRead, this, &ProcessNetworkPage::readClientUdpData);
+        if (!chatUdpClient->bind(QHostAddress::AnyIPv4, 0)) {
+            appendSocketLog(clientChatLog, QString("UDP open failed: %1").arg(chatUdpClient->errorString()));
+            chatUdpClient->deleteLater();
+            chatUdpClient = nullptr;
+            udpClientReady = false;
+            return;
+        }
+        udpClientReady = true;
+        appendSocketLog(clientChatLog, QString("UDP ready. Target %1:%2").arg(host).arg(port));
+    }
+}
+
+void ProcessNetworkPage::stopChatClient()
+{
+    udpClientReady = false;
+
+    if (chatTcpClient) {
+        auto* socket = chatTcpClient;
+        chatTcpClient = nullptr;
+        socket->disconnect(this);
+        socket->disconnectFromHost();
+        socket->deleteLater();
+        appendSocketLog(clientChatLog, "TCP client closed");
+    }
+
+    if (chatUdpClient) {
+        chatUdpClient->close();
+        chatUdpClient->deleteLater();
+        chatUdpClient = nullptr;
+        appendSocketLog(clientChatLog, "UDP client closed");
+    }
+}
+
+void ProcessNetworkPage::readClientTcpData()
+{
+    if (!chatTcpClient) {
+        return;
+    }
+
+    appendSocketLog(clientChatLog, QString("Server -> %1").arg(QString::fromUtf8(chatTcpClient->readAll()).trimmed()));
+}
+
+void ProcessNetworkPage::readClientUdpData()
+{
+    if (!chatUdpClient) {
+        return;
+    }
+
+    while (chatUdpClient->hasPendingDatagrams()) {
+        QByteArray data;
+        data.resize(static_cast<int>(chatUdpClient->pendingDatagramSize()));
+        QHostAddress peerAddress;
+        quint16 peerPort = 0;
+        chatUdpClient->readDatagram(data.data(), data.size(), &peerAddress, &peerPort);
+        appendSocketLog(clientChatLog,
+                        QString("UDP %1:%2 -> %3")
+                            .arg(peerAddress.toString())
+                            .arg(peerPort)
+                            .arg(QString::fromUtf8(data).trimmed()));
+    }
+}
+
+void ProcessNetworkPage::sendClientMessage()
+{
+    const QString message = clientMessageEdit ? clientMessageEdit->text() : QString();
+    if (message.trimmed().isEmpty()) {
+        return;
+    }
+
+    const QByteArray data = message.toUtf8();
+    const QString host = clientHostEdit ? clientHostEdit->text().trimmed() : "127.0.0.1";
+    const quint16 port = static_cast<quint16>(clientPortSpin ? clientPortSpin->value() : 8080);
+
+    if (chatTcpClient) {
+        if (chatTcpClient->state() != QAbstractSocket::ConnectedState) {
+            appendSocketLog(clientChatLog, "TCP client is not connected");
+            return;
+        }
+        chatTcpClient->write(data);
+        chatTcpClient->write("\n");
+        appendSocketLog(clientChatLog, QString("Client -> %1").arg(message));
+    } else if (chatUdpClient && udpClientReady) {
+        QHostAddress targetAddress;
+        if (!targetAddress.setAddress(host)) {
+            appendSocketLog(clientChatLog, "UDP target must be an IP address");
+            return;
+        }
+        chatUdpClient->writeDatagram(data, targetAddress, port);
+        appendSocketLog(clientChatLog, QString("Client -> UDP %1:%2: %3").arg(host).arg(port).arg(message));
+    } else {
+        appendSocketLog(clientChatLog, "Client is not active");
+        return;
+    }
+
+    clientMessageEdit->clear();
+}
+
+void ProcessNetworkPage::updateSocketUi()
+{
+    const bool serverRunning = serverIsRunning();
+    const bool clientActive = clientIsActive();
+    const bool tcpServerMode = serverUsesTcp();
+    const bool tcpClientMode = clientUsesTcp();
+
+    if (serverStatusLabel) {
+        QString text = serverRunning
+            ? QString("%1 server running on port %2")
+                  .arg(tcpServerMode ? "TCP" : "UDP")
+                  .arg(serverPortSpin ? serverPortSpin->value() : 0)
+            : QString("%1 server stopped").arg(tcpServerMode ? "TCP" : "UDP");
+        if (chatTcpServer && !chatServerClients.isEmpty()) {
+            text += QString(" - %1 client(s)").arg(chatServerClients.size());
+        }
+        if (chatUdpServer && !serverUdpPeerAddress.isEmpty()) {
+            text += QString(" - last peer %1:%2").arg(serverUdpPeerAddress).arg(serverUdpPeerPort);
+        }
+        serverStatusLabel->setText(text);
+    }
+
+    if (clientStatusLabel) {
+        QString text;
+        if (chatTcpClient) {
+            text = QString("TCP client %1")
+                .arg(chatTcpClient->state() == QAbstractSocket::ConnectedState ? "connected" : "connecting");
+        } else if (udpClientReady) {
+            text = QString("UDP client ready -> %1:%2")
+                .arg(clientHostEdit ? clientHostEdit->text().trimmed() : "127.0.0.1")
+                .arg(clientPortSpin ? clientPortSpin->value() : 0);
+        } else {
+            text = QString("%1 client stopped").arg(tcpClientMode ? "TCP" : "UDP");
+        }
+        clientStatusLabel->setText(text);
+    }
+
+    if (serverProtocolCombo) serverProtocolCombo->setEnabled(!serverRunning);
+    if (serverPortSpin) serverPortSpin->setEnabled(!serverRunning);
+    if (clientProtocolCombo) clientProtocolCombo->setEnabled(!clientActive);
+    if (clientHostEdit) clientHostEdit->setEnabled(!clientActive);
+    if (clientPortSpin) clientPortSpin->setEnabled(!clientActive);
+
+    if (serverToggleButton) {
+        serverToggleButton->setText(serverRunning ? "Stop" : "Start");
+        serverToggleButton->setObjectName(serverRunning ? "dangerBtn" : "primaryBtn");
+        serverToggleButton->style()->unpolish(serverToggleButton);
+        serverToggleButton->style()->polish(serverToggleButton);
+    }
+    if (clientToggleButton) {
+        clientToggleButton->setText(clientActive ? "Close" : (tcpClientMode ? "Connect" : "Open"));
+        clientToggleButton->setObjectName(clientActive ? "dangerBtn" : "primaryBtn");
+        clientToggleButton->style()->unpolish(clientToggleButton);
+        clientToggleButton->style()->polish(clientToggleButton);
+    }
+
+    if (serverSendButton) serverSendButton->setEnabled(serverRunning);
+    if (serverMessageEdit) serverMessageEdit->setEnabled(serverRunning);
+    if (clientSendButton) clientSendButton->setEnabled(clientActive);
+    if (clientMessageEdit) clientMessageEdit->setEnabled(clientActive);
 }
 
 void ProcessNetworkPage::runLab2(const QString& subcommand, const QStringList& args, const QString& action, CommandType type, const QString& readySignal)

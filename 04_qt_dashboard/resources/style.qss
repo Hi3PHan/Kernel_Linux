@@ -121,6 +121,28 @@ QPushButton#tabBtn:checked {
     color: #2C2C2C;
 }
 
+#timePrimaryValue {
+    font-size: 22px;
+    font-weight: 600;
+    color: #2C2C2C;
+    padding: 8px 0px 14px 0px;
+    border-bottom: 1px solid #EFEEED;
+}
+
+#timeKey {
+    color: #6E6E6E;
+    font-weight: 600;
+    padding: 8px 0px;
+}
+
+#timeValue {
+    background-color: #F7F7F7;
+    color: #2C2C2C;
+    border: 1px solid #EFEEED;
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
 /* ---------- Form ---------- */
 QLabel {
     font-size: 13px;
@@ -263,9 +285,9 @@ QPushButton#iconBtn:hover {
 
 /* ---------- Output / Log Panel ---------- */
 #outputPanel {
-    background-color: #2C2C2C;
+    background-color: #FFFFFF;
     border-radius: 6px;
-    border: 1px solid #1E1E1E;
+    border: 1px solid #E0DFDE;
 }
 
 #outputPanel[permissionError="true"] {
@@ -287,8 +309,9 @@ QPushButton#iconBtn:hover {
 }
 
 #outputPanel QLabel {
-    background-color: #2C2C2C;
-    color: #E0E0E0;
+    background-color: transparent;
+    color: #2C2C2C;
+    font-weight: 600;
 }
 
 QSplitter::handle { background-color: #E0DFDE; }

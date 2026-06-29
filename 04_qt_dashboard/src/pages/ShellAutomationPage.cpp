@@ -11,6 +11,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -271,20 +272,43 @@ QWidget* ShellAutomationPage::buildTimeTab()
     auto* card = new QWidget(page);
     card->setObjectName("card");
     auto* cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(16, 16, 16, 16);
-    cardLayout->setSpacing(12);
-    auto* heading = new QLabel("Thong tin thoi gian he thong", card);
+    cardLayout->setContentsMargins(18, 18, 18, 18);
+    cardLayout->setSpacing(14);
+
+    auto* heading = new QLabel("System Time", card);
     heading->setObjectName("sectionHeading");
-    timeLabel = new QLabel("-", card);
-    tzLabel = new QLabel("Timezone: -", card);
-    ntpLabel = new QLabel("NTP: -", card);
+
+    timeLabel = new QLabel("Loading...", card);
+    timeLabel->setObjectName("timePrimaryValue");
+    timeLabel->setWordWrap(true);
+
+    auto* infoGrid = new QGridLayout();
+    infoGrid->setContentsMargins(0, 0, 0, 0);
+    infoGrid->setHorizontalSpacing(16);
+    infoGrid->setVerticalSpacing(8);
+
+    auto* timezoneKey = new QLabel("Timezone", card);
+    timezoneKey->setObjectName("timeKey");
+    tzLabel = new QLabel("-", card);
+    tzLabel->setObjectName("timeValue");
+
+    auto* ntpKey = new QLabel("NTP service", card);
+    ntpKey->setObjectName("timeKey");
+    ntpLabel = new QLabel("-", card);
+    ntpLabel->setObjectName("timeValue");
+
     for (auto* label : {timeLabel, tzLabel, ntpLabel}) {
         label->setWordWrap(true);
     }
+    infoGrid->addWidget(timezoneKey, 0, 0);
+    infoGrid->addWidget(tzLabel, 0, 1);
+    infoGrid->addWidget(ntpKey, 1, 0);
+    infoGrid->addWidget(ntpLabel, 1, 1);
+    infoGrid->setColumnStretch(1, 1);
+
     cardLayout->addWidget(heading);
     cardLayout->addWidget(timeLabel);
-    cardLayout->addWidget(tzLabel);
-    cardLayout->addWidget(ntpLabel);
+    cardLayout->addLayout(infoGrid);
     cardLayout->addStretch();
     layout->addWidget(card, 1);
     return page;
@@ -537,9 +561,15 @@ void ShellAutomationPage::applyCommandResult(const CommandResult& result)
         timeLoaded = true;
         const QStringList lines = combined.split('\n', Qt::SkipEmptyParts);
         if (timeLabel) {
+            const QString timezoneLine = lines.filter("Time zone", Qt::CaseInsensitive).value(0, "-");
+            const QString ntpLine = lines.filter("NTP", Qt::CaseInsensitive).value(0, "-");
+            const auto valueAfterColon = [](const QString& text) {
+                const int colon = text.indexOf(':');
+                return colon >= 0 ? text.mid(colon + 1).trimmed() : text.trimmed();
+            };
             timeLabel->setText(lines.value(0, "-"));
-            tzLabel->setText("Timezone: " + lines.filter("Time zone", Qt::CaseInsensitive).value(0, "-"));
-            ntpLabel->setText("NTP: " + lines.filter("NTP", Qt::CaseInsensitive).value(0, "-"));
+            tzLabel->setText(valueAfterColon(timezoneLine));
+            ntpLabel->setText(valueAfterColon(ntpLine));
         }
     } else if (result.action.startsWith("Lab1 Cron") && result.action != "Lab1 Cron List") {
         cronLoaded = false;

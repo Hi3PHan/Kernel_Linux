@@ -8,7 +8,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 
 add_executable(qt_dashboard
     src/main.cpp
@@ -40,7 +40,7 @@ add_executable(qt_dashboard
     src/pages/SystemMonitorPage.h
 )
 
-target_link_libraries(qt_dashboard PRIVATE Qt6::Widgets)
+target_link_libraries(qt_dashboard PRIVATE Qt6::Widgets Qt6::Network)
 target_compile_definitions(qt_dashboard PRIVATE
     LAB_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )

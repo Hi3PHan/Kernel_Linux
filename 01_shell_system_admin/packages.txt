@@ -1,0 +1,4 @@
+# Danh sach package demo cho Ubuntu/Debian hoac cac distro tuong ung.
+# Co the sua file nay theo distro dang dung.
+curl
+tree

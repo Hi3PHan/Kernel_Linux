@@ -1,0 +1,407 @@
+/* ============================================================
+   style.qss — Ubuntu/Yaru Light Theme cho Qt6 Widgets Dashboard
+   Nguồn sự thật DUY NHẤT cho toàn bộ màu/font/spacing/radius.
+   KHÔNG tự thêm giá trị mới ở .cpp — chỉ dùng objectName/class
+   đã định nghĩa ở đây. Cần widget mới: tái dùng selector gần nhất.
+   ============================================================ */
+
+/* ---------- Base ---------- */
+QWidget {
+    background-color: #FAFAFA;
+    color: #2C2C2C;
+    font-family: "Ubuntu", "Noto Sans", "Cantarell", sans-serif;
+    font-size: 13px;
+}
+
+QMainWindow {
+    background-color: #FAFAFA;
+}
+
+/* ---------- Sidebar ---------- */
+#sidebar {
+    background-color: #F2F1F0;
+    border-right: 1px solid #E0DFDE;
+}
+
+#sidebar QPushButton {
+    background-color: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #2C2C2C;
+    border-radius: 0px;
+}
+
+#sidebar QPushButton:hover {
+    background-color: #E8E7E6;
+}
+
+#sidebar QPushButton:checked {
+    background-color: #FFFFFF;
+    border-left: 3px solid #E95420;
+    font-weight: 600;
+    color: #E95420;
+}
+
+/* ---------- Header ---------- */
+#header {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E0DFDE;
+    padding: 12px 16px;
+}
+
+#headerTitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: #2C2C2C;
+}
+
+#headerSubtitle {
+    font-size: 12px;
+    color: #6E6E6E;
+}
+
+/* Badge: Root mode / Limited mode */
+#badgeRoot {
+    background-color: #E3F3E6;
+    color: #1E7D32;
+    border-radius: 10px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#badgeLimited {
+    background-color: #FDEDEC;
+    color: #C7162D;
+    border-radius: 10px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* ---------- Segmented Tab Control (KHÔNG dùng QTabWidget mặc định) ---------- */
+#tabBar {
+    background-color: #F2F1F0;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QPushButton#tabBtn {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: #6E6E6E;
+}
+
+QPushButton#tabBtn:hover {
+    background-color: #E8E7E6;
+}
+
+QPushButton#tabBtn:checked {
+    background-color: #FFFFFF;
+    color: #E95420;
+    font-weight: 600;
+}
+
+/* ---------- Card / Panel ---------- */
+#card {
+    background-color: #FFFFFF;
+    border: 1px solid #E0DFDE;
+    border-radius: 6px;
+}
+
+#sectionHeading {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2C2C2C;
+}
+
+/* ---------- Form ---------- */
+QLabel {
+    font-size: 13px;
+    color: #2C2C2C;
+}
+
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #D6D5D4;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    selection-background-color: #E95420;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {
+    border: 1px solid #E95420;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+/* ---------- Buttons ---------- */
+QPushButton {
+    min-height: 36px;
+    border-radius: 6px;
+    padding: 0px 16px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Primary action */
+QPushButton#primaryBtn {
+    background-color: #E95420;
+    color: #FFFFFF;
+    border: none;
+}
+
+QPushButton#primaryBtn:hover {
+    background-color: #C7401A;
+}
+
+QPushButton#primaryBtn:pressed {
+    background-color: #A8350F;
+}
+
+QPushButton#primaryBtn:disabled {
+    background-color: #E0DFDE;
+    color: #A0A0A0;
+}
+
+/* Secondary action */
+QPushButton#secondaryBtn {
+    background-color: #FFFFFF;
+    color: #2C2C2C;
+    border: 1px solid #D6D5D4;
+}
+
+QPushButton#secondaryBtn:hover {
+    background-color: #F2F1F0;
+}
+
+QPushButton#actionBarBtn {
+    min-height: 32px;
+    padding: 0px 14px;
+    font-size: 13px;
+    background-color: #FFFFFF;
+    color: #2C2C2C;
+    border: 1px solid #D6D5D4;
+    border-radius: 6px;
+}
+
+QPushButton#actionBarBtn:hover { background-color: #F2F1F0; }
+
+QToolButton#moreBtn {
+    min-height: 32px;
+    padding: 0px 12px;
+    background-color: #FFFFFF;
+    color: #2C2C2C;
+    border: 1px solid #D6D5D4;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+QToolButton#moreBtn:hover { background-color: #F2F1F0; }
+
+QToolButton#moreBtn::menu-indicator {
+    width: 10px;
+    subcontrol-position: right center;
+    subcontrol-origin: padding;
+    right: 6px;
+}
+
+QMenu#moreMenu {
+    background-color: #FFFFFF;
+    border: 1px solid #E0DFDE;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QMenu#moreMenu::item {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #2C2C2C;
+}
+
+QMenu#moreMenu::item:selected { background-color: #FCE4D9; color: #E95420; }
+QMenu#moreMenu::separator { height: 1px; background-color: #E0DFDE; margin: 4px 8px; }
+
+/* Destructive action (Delete / Kill / Clear) */
+QPushButton#dangerBtn {
+    background-color: #FDEDEC;
+    color: #C7162D;
+    border: 1px solid #F5C6C6;
+}
+
+QPushButton#dangerBtn:hover {
+    background-color: #C7162D;
+    color: #FFFFFF;
+    border: 1px solid #C7162D;
+}
+
+/* Icon-only toolbar button (Back, Refresh, Stop) */
+QPushButton#iconBtn {
+    min-height: 32px;
+    min-width: 32px;
+    max-width: 32px;
+    padding: 0px;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+}
+
+QPushButton#iconBtn:hover {
+    background-color: #E8E7E6;
+}
+
+/* ---------- Output / Log Panel ---------- */
+#outputPanel {
+    background-color: #2C2C2C;
+    border-radius: 6px;
+    border: 1px solid #1E1E1E;
+}
+
+#outputPanel[permissionError="true"] {
+    border: 1px solid #C7162D;
+}
+
+#outputPanel QPlainTextEdit, #outputPanel QTextEdit {
+    background-color: #2C2C2C;
+    color: #E0E0E0;
+    border: none;
+    font-family: "Ubuntu Mono", "Noto Sans Mono", monospace;
+    font-size: 12px;
+    padding: 12px;
+}
+
+#outputPanel[permissionError="true"] QTextEdit,
+#outputPanel[permissionError="true"] QPlainTextEdit {
+    color: #F5C6C6;
+}
+
+#outputPanel QLabel {
+    background-color: #2C2C2C;
+    color: #E0E0E0;
+}
+
+QSplitter::handle { background-color: #E0DFDE; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical { height: 4px; }
+QSplitter::handle:hover { background-color: #E95420; }
+QSplitter::handle:pressed { background-color: #C7401A; }
+
+/* ---------- Table (Activity Log, Processes) ---------- */
+QTableView {
+    background-color: #FFFFFF;
+    border: 1px solid #E0DFDE;
+    border-radius: 6px;
+    gridline-color: #EFEEED;
+    font-size: 13px;
+}
+
+QHeaderView::section {
+    background-color: #F2F1F0;
+    color: #6E6E6E;
+    padding: 8px;
+    border: none;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+QTableView::item:selected {
+    background-color: #FCE4D9;
+    color: #2C2C2C;
+}
+
+/* ---------- Tree / File Explorer ---------- */
+QTreeView {
+    background-color: #FFFFFF;
+    border: 1px solid #E0DFDE;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+QTreeView::item:selected {
+    background-color: #FCE4D9;
+    color: #2C2C2C;
+}
+
+QTreeView::item:hover {
+    background-color: #F2F1F0;
+}
+
+/* ---------- Scrollbar (GNOME overlay style, mỏng) ---------- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: #C7C6C5;
+    border-radius: 5px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #A0A0A0;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #C7C6C5;
+    border-radius: 5px;
+    min-width: 24px;
+}
+
+/* ---------- Tooltip (dùng để chứa full path) ---------- */
+QToolTip {
+    background-color: #2C2C2C;
+    color: #FFFFFF;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* ---------- ComboBox dropdown list ---------- */
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    border: 1px solid #E0DFDE;
+    border-radius: 6px;
+    selection-background-color: #FCE4D9;
+    selection-color: #2C2C2C;
+    padding: 4px;
+}
+
+/* ---------- CheckBox / RadioButton ---------- */
+QCheckBox, QRadioButton {
+    font-size: 13px;
+    spacing: 8px;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+}
+
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #E95420;
+    border: 1px solid #E95420;
+}

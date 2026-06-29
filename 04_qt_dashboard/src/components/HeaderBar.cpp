@@ -13,11 +13,6 @@ HeaderBar::HeaderBar(bool rootMode, QWidget* parent)
     layout->setContentsMargins(16, 0, 16, 0);
     layout->setSpacing(0);
 
-    auto* iconLabel = new QLabel(QStringLiteral("●"), this);
-    iconLabel->setFixedSize(32, 32);
-    iconLabel->setAlignment(Qt::AlignCenter);
-    iconLabel->setObjectName("headerTitle");
-
     auto* titleLabel = new QLabel("Ubuntu System Manager", this);
     titleLabel->setObjectName("headerTitle");
 
@@ -25,8 +20,6 @@ HeaderBar::HeaderBar(bool rootMode, QWidget* parent)
                                            : QStringLiteral("⚠ Limited mode"), this);
     badgeLabel->setObjectName(rootMode ? "badgeRoot" : "badgeLimited");
 
-    layout->addWidget(iconLabel);
-    layout->addSpacing(10);
     layout->addWidget(titleLabel);
     layout->addStretch();
     layout->addWidget(badgeLabel);

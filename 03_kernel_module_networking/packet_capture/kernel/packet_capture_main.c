@@ -57,6 +57,11 @@ static atomic64_t dropped_records = ATOMIC64_INIT(0);
 
 static struct nf_hook_ops capture_hooks[2];
 
+/*
+ * Hàm direction_name
+ * Công dụng: Chuyển đổi mã hướng bắt gói (IN, OUT, BOTH) thành chuỗi tương ứng.
+ * Phục vụ cho việc in log trong kernel.
+ */
 static const char *direction_name(__u8 direction)
 {
 	switch (direction) {
@@ -71,6 +76,11 @@ static const char *direction_name(__u8 direction)
 	}
 }
 
+/*
+ * Hàm protocol_name
+ * Công dụng: Chuyển đổi mã giao thức (ANY, ICMP, TCP, UDP) thành chuỗi.
+ * Dùng để in log thông tin dễ đọc ra kernel buffer (dmesg).
+ */
 static const char *protocol_name(__u8 protocol)
 {
 	switch (protocol) {
@@ -87,6 +97,11 @@ static const char *protocol_name(__u8 protocol)
 	}
 }
 
+/*
+ * Hàm validate_filter
+ * Công dụng: Kiểm tra tính hợp lệ của cấu hình bộ lọc từ user-space gửi xuống.
+ * Trả về 0 nếu hợp lệ, hoặc mã lỗi (-EINVAL) nếu các thông số không đúng chuẩn.
+ */
 static int validate_filter(const struct packet_capture_filter *filter)
 {
 	if (!filter->enabled)
@@ -106,6 +121,12 @@ static int validate_filter(const struct packet_capture_filter *filter)
 	return 0;
 }
 
+/*
+ * Hàm filter_matches_packet
+ * Công dụng: So khớp thông tin gói tin hiện tại với cấu hình bộ lọc (active_filter).
+ * Trả về true nếu gói tin thỏa mãn tất cả các điều kiện lọc (giao thức, hướng, IP),
+ * ngược lại trả về false.
+ */
 static bool filter_matches_packet(const struct packet_capture_filter *filter,
 				  const struct capture_packet_info *pkt)
 {
@@ -129,6 +150,12 @@ static bool filter_matches_packet(const struct packet_capture_filter *filter,
 	return true;
 }
 
+/*
+ * Hàm set_payload_bounds
+ * Công dụng: Tính toán độ dài phần payload (dữ liệu phần mềm) của gói tin dựa vào
+ * độ dài IP header và Transport header (TCP/UDP). Trả về true nếu gói tin
+ * đủ lớn chứa payload, ngược lại trả về false.
+ */
 static bool set_payload_bounds(const struct iphdr *iph,
 			       struct capture_packet_info *pkt,
 			       unsigned int transport_header_len)
@@ -144,6 +171,11 @@ static bool set_payload_bounds(const struct iphdr *iph,
 	return true;
 }
 
+/*
+ * Hàm read_transport_info
+ * Công dụng: Đọc thông tin từ tầng Transport (L4) dựa trên giao thức (TCP, UDP, ICMP).
+ * Trích xuất port nguồn, port đích và gọi set_payload_bounds để thiết lập giới hạn dữ liệu.
+ */
 static bool read_transport_info(const struct sk_buff *skb,
 				const struct iphdr *iph,
 				struct capture_packet_info *pkt)
@@ -198,6 +230,11 @@ static bool read_transport_info(const struct sk_buff *skb,
 	return false;
 }
 
+/*
+ * Hàm copy_packet_snapshot
+ * Công dụng: Sao chép một phần dữ liệu thực của gói tin (snapshot) từ sk_buff
+ * vào cấu trúc bản ghi (record). Giới hạn tối đa PACKET_CAPTURE_SNAPSHOT_BYTES.
+ */
 static int copy_packet_snapshot(const struct sk_buff *skb,
 				struct packet_capture_record *record)
 {
@@ -216,6 +253,12 @@ static int copy_packet_snapshot(const struct sk_buff *skb,
 	return 0;
 }
 
+/*
+ * Hàm store_packet_record
+ * Công dụng: Đóng gói thông tin metadata và snapshot của gói tin vào một record,
+ * sau đó đẩy record này vào Ring Buffer. Nếu buffer đầy, nó sẽ ghi đè lên
+ * record cũ nhất (cập nhật capture_head).
+ */
 static void store_packet_record(const struct capture_packet_info *pkt,
 				const struct sk_buff *skb)
 {
@@ -257,6 +300,13 @@ static void store_packet_record(const struct capture_packet_info *pkt,
 	spin_unlock_irqrestore(&capture_lock, flags);
 }
 
+/*
+ * Hàm capture_hook_common
+ * Công dụng: Hàm xử lý cốt lõi được gọi bởi cả hook IN và OUT.
+ * - Loại bỏ các gói tin không liên quan (không phải IPv4, phân mảnh, không đúng giao thức).
+ * - Lấy thông tin cơ bản, so khớp bộ lọc, và lưu gói tin nếu thỏa mãn.
+ * - Luôn luôn trả về NF_ACCEPT để không can thiệp vào quá trình mạng của hệ thống.
+ */
 static unsigned int capture_hook_common(struct sk_buff *skb, __u8 direction)
 {
 	struct packet_capture_filter filter_snapshot;
@@ -304,6 +354,10 @@ static unsigned int capture_hook_common(struct sk_buff *skb, __u8 direction)
 	return NF_ACCEPT;
 }
 
+/*
+ * Hàm capture_in_hook
+ * Công dụng: Hook cho NF_INET_LOCAL_IN, bắt các gói tin đang đi vào hệ thống.
+ */
 static unsigned int capture_in_hook(void *priv, struct sk_buff *skb,
 				    const struct nf_hook_state *state)
 {
@@ -312,6 +366,10 @@ static unsigned int capture_in_hook(void *priv, struct sk_buff *skb,
 	return capture_hook_common(skb, PACKET_CAPTURE_DIR_IN);
 }
 
+/*
+ * Hàm capture_out_hook
+ * Công dụng: Hook cho NF_INET_LOCAL_OUT, bắt các gói tin đang đi ra từ hệ thống.
+ */
 static unsigned int capture_out_hook(void *priv, struct sk_buff *skb,
 				     const struct nf_hook_state *state)
 {
@@ -320,6 +378,10 @@ static unsigned int capture_out_hook(void *priv, struct sk_buff *skb,
 	return capture_hook_common(skb, PACKET_CAPTURE_DIR_OUT);
 }
 
+/*
+ * Hàm clear_records
+ * Công dụng: Xóa toàn bộ dữ liệu trong Ring Buffer và đặt lại các biến đếm thống kê về 0.
+ */
 static void clear_records(void)
 {
 	unsigned long flags;
@@ -338,6 +400,11 @@ static void clear_records(void)
 	atomic64_set(&dropped_records, 0);
 }
 
+/*
+ * Hàm fill_stats
+ * Công dụng: Thu thập các số liệu thống kê (số gói đã thấy, đã khớp, đã ghi đè, v.v.)
+ * để gửi trả về cho user-space qua lệnh ioctl.
+ */
 static void fill_stats(struct packet_capture_stats *stats)
 {
 	unsigned long flags;
@@ -355,6 +422,12 @@ static void fill_stats(struct packet_capture_stats *stats)
 	spin_unlock_irqrestore(&capture_lock, flags);
 }
 
+/*
+ * Hàm fill_read_request
+ * Công dụng: Xử lý yêu cầu đọc gói tin từ user-space.
+ * Copy các bản ghi mới (có seq > since_seq) từ Ring Buffer vào cấu trúc request
+ * (giới hạn tối đa bằng limit).
+ */
 static void fill_read_request(struct packet_capture_read_request *request)
 {
 	unsigned long flags;
@@ -385,6 +458,11 @@ static void fill_read_request(struct packet_capture_read_request *request)
 	spin_unlock_irqrestore(&capture_lock, flags);
 }
 
+/*
+ * Hàm capture_ioctl
+ * Công dụng: Giao tiếp với user-space qua các lệnh ioctl.
+ * Xử lý các lệnh như cài đặt/lấy bộ lọc, xóa dữ liệu, lấy thống kê và đọc gói tin.
+ */
 static long capture_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct packet_capture_filter filter;
@@ -471,6 +549,12 @@ static struct miscdevice capture_miscdev = {
 	.mode = 0600,
 };
 
+/*
+ * Hàm packet_capture_init
+ * Công dụng: Hàm khởi tạo module khi được nạp vào kernel (insmod).
+ * - Đăng ký miscdevice để tạo character device giao tiếp ioctl.
+ * - Đăng ký 2 Netfilter hooks để chặn bắt gói tin IN và OUT.
+ */
 static int __init packet_capture_init(void)
 {
 	int ret;
@@ -508,6 +592,12 @@ err_misc:
 	return ret;
 }
 
+/*
+ * Hàm packet_capture_exit
+ * Công dụng: Hàm dọn dẹp khi gỡ module khỏi kernel (rmmod).
+ * - Hủy đăng ký Netfilter hooks.
+ * - Hủy đăng ký miscdevice.
+ */
 static void __exit packet_capture_exit(void)
 {
 	nf_unregister_net_hook(&init_net, &capture_hooks[1]);

@@ -2,12 +2,8 @@
 /*
  * capturectl - user-space control tool for packet_capture.ko.
  *
- * Usage:
- *   capturectl status
- *   capturectl stats
  *   capturectl clear
  *   capturectl set <any|icmp|tcp|udp> <src-ip|any> <in|out|both> [--dst-ip <ip|any>]
- *   capturectl read [--since <seq>] [--limit <n>]
  *   capturectl stream [--since <seq>] [--interval-ms <n>]
  *   capturectl detail <seq>
  */
@@ -31,26 +27,39 @@
 
 static volatile sig_atomic_t stop_requested;
 
+/*
+ * Hàm handle_signal
+ * Công dụng: Xử lý tín hiệu (signal) từ hệ điều hành (ví dụ: SIGINT, SIGTERM khi người dùng nhấn Ctrl+C).
+ * Cập nhật biến cờ stop_requested để kết thúc vòng lặp trong chức năng stream.
+ */
 static void handle_signal(int signo) { (void)signo; stop_requested = 1; }
 
 /* ---------- usage ---------- */
 
+/*
+ * Hàm usage
+ * Công dụng: In ra màn hình hướng dẫn sử dụng công cụ capturectl (các cú pháp lệnh hỗ trợ)
+ * khi người dùng gọi chương trình sai cú pháp hoặc không truyền tham số.
+ */
 static void usage(const char *prog)
 {
 	fprintf(stderr,
 		"Usage:\n"
-		"  %s status\n"
-		"  %s stats\n"
 		"  %s clear\n"
 		"  %s set <any|icmp|tcp|udp> <src-ip|any> <in|out|both> [--dst-ip <ip|any>]\n"
-		"  %s read [--since <seq>] [--limit <n>]\n"
 		"  %s stream [--since <seq>] [--interval-ms <n>]\n"
 		"  %s detail <seq>\n",
-		prog, prog, prog, prog, prog, prog, prog);
+		prog, prog, prog, prog);
 }
 
 /* ---------- device ---------- */
 
+/*
+ * Hàm open_device
+ * Công dụng: Mở file thiết bị ảo (character device) mà kernel module tạo ra
+ * (mặc định là /dev/packet_capture) để thực hiện các lời gọi ioctl.
+ * Trả về file descriptor hoặc in ra lỗi nếu mở thất bại.
+ */
 static int open_device(void)
 {
 	int fd = open(PACKET_CAPTURE_DEVICE_PATH, O_RDWR);
@@ -205,18 +214,18 @@ static void print_record_header(void)
  * Thông tin bao gồm: số thứ tự (SEQ), timestamp, hướng (DIR), giao thức,
  * IP nguồn, cổng nguồn, IP đích, cổng đích, và độ dài gói tin.
  */
-static void print_record(const struct packet_capture_record *r)
+static void print_record(const struct packet_capture_record *record)
 {
 	char src[INET_ADDRSTRLEN], dst[INET_ADDRSTRLEN];
-	ip_str(r->src_addr, src, sizeof(src));
-	ip_str(r->dst_addr, dst, sizeof(dst));
+	ip_str(record->src_addr, src, sizeof(src));
+	ip_str(record->dst_addr, dst, sizeof(dst));
 	printf("%llu %llu %s %s %s %u %s %u %u\n",
-	       (unsigned long long)r->seq,
-	       (unsigned long long)r->timestamp_ns,
-	       dir_str(r->direction), proto_str(r->protocol),
-	       src, ntohs(r->src_port),
-	       dst, ntohs(r->dst_port),
-	       r->ip_total_len);
+	       (unsigned long long)record->seq,
+	       (unsigned long long)record->timestamp_ns,
+	       dir_str(record->direction), proto_str(record->protocol),
+	       src, ntohs(record->src_port),
+	       dst, ntohs(record->dst_port),
+	       record->ip_total_len);
 }
 
 /*
@@ -271,30 +280,30 @@ static uint32_t be32(const __u8 *p)
  * Nó tính toán độ dài thực sự đã được capture, và tỷ lệ các ký tự in ra được (printable),
  * từ đó đoán xem payload là dạng văn bản hay nhị phân/mã hóa.
  */
-static void print_payload_preview(const struct packet_capture_record *r)
+static void print_payload_preview(const struct packet_capture_record *record)
 {
-	uint16_t off = r->payload_offset, avail, preview, i, readable = 0;
+	uint16_t off = record->payload_offset, avail, preview, i, readable = 0;
 
-	if (!r->payload_len)          { printf("  Payload: none\n"); return; }
-	if (r->captured_len <= off)   {
-		printf("  Payload: %u bytes, not captured\n", r->payload_len);
+	if (!record->payload_len)          { printf("  Payload: none\n"); return; }
+	if (record->captured_len <= off)   {
+		printf("  Payload: %u bytes, not captured\n", record->payload_len);
 		return;
 	}
-	avail   = r->captured_len - off;
+	avail   = record->captured_len - off;
 	preview = avail > 64 ? 64 : avail;
 
 	printf("  Length: %u bytes\n  Captured: %u/%u bytes\n",
-	       r->payload_len, avail, r->payload_len);
+	       record->payload_len, avail, record->payload_len);
 
 	for (i = 0; i < preview; i++) {
-		unsigned char ch = r->data[off + i];
+		unsigned char ch = record->data[off + i];
 		if (isprint(ch) || ch == '\r' || ch == '\n' || ch == '\t')
 			readable++;
 	}
 	printf("  Preview: ");
 	if (preview && readable * 100 / preview >= 70) {
 		for (i = 0; i < preview; i++) {
-			unsigned char ch = r->data[off + i];
+			unsigned char ch = record->data[off + i];
 			if      (ch == '\r') printf("\\r");
 			else if (ch == '\n') printf("\\n");
 			else if (ch == '\t') printf("\\t");
@@ -356,38 +365,41 @@ static void print_tcp_flags(__u8 flags)
  * transport header và in ra các thông số cụ thể: cổng nguồn/đích,
  * mã lỗi, hoặc các flag (nếu là TCP).
  */
-static void print_transport(const struct packet_capture_record *r,
-			    uint8_t proto, uint16_t ip_hlen)
+static void print_transport(const struct packet_capture_record *record,
+			    uint8_t protocol, uint16_t ip_hlen)
 {
-	const __u8 *data = r->data;
-	uint16_t cap = r->captured_len;
+	const __u8 *raw_data = record->data;
+	uint16_t captured_len = record->captured_len;
 
 	printf("\nTransport\n");
 
-	if (proto == PACKET_CAPTURE_PROTO_TCP) {
-		if (cap < ip_hlen + 20) { printf("  TCP: not enough captured bytes\n"); return; }
-		uint16_t tcp_hlen = (data[ip_hlen + 12] >> 4) * 4;
-		printf("  TCP %u -> %u\n", be16(data + ip_hlen), be16(data + ip_hlen + 2));
-		printf("  Seq: %u\n",  be32(data + ip_hlen + 4));
-		printf("  Ack: %u\n",  be32(data + ip_hlen + 8));
+	if (protocol == PACKET_CAPTURE_PROTO_TCP) {
+		if (captured_len < ip_hlen + 20) { printf("  TCP: not enough captured bytes\n"); return; }
+		uint16_t tcp_hlen = (raw_data[ip_hlen + 12] >> 4) * 4;
+		printf("  TCP %u -> %u\n", be16(raw_data + ip_hlen), be16(raw_data + ip_hlen + 2));
+		printf("  Seq: %u\n",  be32(raw_data + ip_hlen + 4));
+		printf("  Ack: %u\n",  be32(raw_data + ip_hlen + 8));
 		printf("  Header: %u bytes\n", tcp_hlen);
-		print_tcp_flags(data[ip_hlen + 13]);
+		print_tcp_flags(raw_data[ip_hlen + 13]);
 		return;
 	}
-	if (proto == PACKET_CAPTURE_PROTO_UDP) {
-		if (cap < ip_hlen + 8) { printf("  UDP: not enough captured bytes\n"); return; }
-		printf("  UDP %u -> %u\n", be16(data + ip_hlen), be16(data + ip_hlen + 2));
-		printf("  Length: %u bytes\n", be16(data + ip_hlen + 4));
+	if (protocol == PACKET_CAPTURE_PROTO_UDP) {
+		if (captured_len < ip_hlen + 8) {
+			 printf("  UDP: not enough captured bytes\n"); 
+			return; 
+		}
+		printf("  UDP %u -> %u\n", be16(raw_data + ip_hlen), be16(raw_data + ip_hlen + 2));
+		printf("  Length: %u bytes\n", be16(raw_data + ip_hlen + 4));
 		return;
 	}
-	if (proto == PACKET_CAPTURE_PROTO_ICMP) {
-		if (cap < ip_hlen + 4) { printf("  ICMP: not enough captured bytes\n"); return; }
-		uint8_t type = data[ip_hlen], code = data[ip_hlen + 1];
+	if (protocol == PACKET_CAPTURE_PROTO_ICMP) {
+		if (captured_len < ip_hlen + 4) { printf("  ICMP: not enough captured bytes\n"); return; }
+		uint8_t type = raw_data[ip_hlen], code = raw_data[ip_hlen + 1];
 		printf("  ICMP: %s\n", icmp_type_name(type));
 		printf("  Type/Code: %u/%u\n", type, code);
-		if ((type == 0 || type == 8) && cap >= ip_hlen + 8) {
-			printf("  Identifier: %u\n", be16(data + ip_hlen + 4));
-			printf("  Sequence: %u\n",   be16(data + ip_hlen + 6));
+		if ((type == 0 || type == 8) && captured_len >= ip_hlen + 8) {
+			printf("  Identifier: %u\n", be16(raw_data + ip_hlen + 4));
+			printf("  Sequence: %u\n",   be16(raw_data + ip_hlen + 6));
 		}
 	}
 }
@@ -398,105 +410,61 @@ static void print_transport(const struct packet_capture_record *r,
  * lệnh `capturectl detail <seq>`. Gọi lần lượt các hàm in network layer,
  * transport layer, payload preview và hexdump.
  */
-static void print_record_detail(const struct packet_capture_record *r)
+static void print_record_detail(const struct packet_capture_record *record)
 {
 	char src[INET_ADDRSTRLEN], dst[INET_ADDRSTRLEN];
-	bool has_port = r->protocol == PACKET_CAPTURE_PROTO_TCP ||
-	                r->protocol == PACKET_CAPTURE_PROTO_UDP;
-	const __u8 *data = r->data;
-	uint16_t cap = r->captured_len;
+	bool has_port = record->protocol == PACKET_CAPTURE_PROTO_TCP ||
+	                record->protocol == PACKET_CAPTURE_PROTO_UDP;
+	const __u8 *raw_data = record->data;
+	uint16_t captured_len = record->captured_len;
 
-	ip_str(r->src_addr, src, sizeof(src));
-	ip_str(r->dst_addr, dst, sizeof(dst));
+	ip_str(record->src_addr, src, sizeof(src));
+	ip_str(record->dst_addr, dst, sizeof(dst));
 
-	printf("SEQ %llu\n", (unsigned long long)r->seq);
-	printf("  Direction: %s\n", dir_str(r->direction));
-	printf("  Protocol: %s\n",  proto_str(r->protocol));
+	printf("SEQ %llu\n", (unsigned long long)record->seq);
+	printf("  Direction: %s\n", dir_str(record->direction));
+	printf("  Protocol: %s\n",  proto_str(record->protocol));
 	if (has_port)
 		printf("  Flow: %s:%u -> %s:%u\n",
-		       src, ntohs(r->src_port), dst, ntohs(r->dst_port));
+		       src, ntohs(record->src_port), dst, ntohs(record->dst_port));
 	else
 		printf("  Flow: %s -> %s\n", src, dst);
-	printf("  IP length: %u bytes\n", r->ip_total_len);
+	printf("  IP length: %u bytes\n", record->ip_total_len);
 
 	/* decode network layer */
-	if (cap < 20) {
+	if (captured_len < 20) {
 		printf("  Not enough captured bytes to decode IPv4 header\n");
 	} else {
-		uint8_t  ver      = data[0] >> 4;
-		uint16_t ip_hlen  = (uint16_t)((data[0] & 0x0f) * 4);
-		uint16_t frag     = be16(data + 6);
-		uint8_t  proto    = data[9];
+		uint8_t  ver      = raw_data[0] >> 4;
+		uint16_t ip_hlen  = (uint16_t)((raw_data[0] & 0x0f) * 4);
+		uint16_t frag     = be16(raw_data + 6);
+		uint8_t  protocol = raw_data[9];
 
 		printf("\nNetwork\n");
 		if (frag & 0x3fff)
 			printf("  Fragment: flags=0x%x offset=%u\n",
 			       (frag >> 13) & 0x7, frag & 0x1fff);
 
-		if (ver == 4 && ip_hlen >= 20 && cap >= ip_hlen)
-			print_transport(r, proto, ip_hlen);
+		if (ver == 4 && ip_hlen >= 20 && captured_len >= ip_hlen)
+			print_transport(record, protocol, ip_hlen);
 		else
 			printf("  Cannot decode transport header\n");
 	}
 
 	printf("\nPayload\n");
-	print_payload_preview(r);
+	print_payload_preview(record);
 
 	printf("\nHex / ASCII Snapshot\n");
-	if (cap)
-		print_hex_ascii(data, cap);
+	if (captured_len)
+		print_hex_ascii(raw_data, captured_len);
 	else
 		printf("(no bytes captured)\n");
 }
 
 /* ---------- ioctl wrappers ---------- */
 
-/*
- * Hàm do_show_status
- * Công dụng: Gọi ioctl lấy cấu hình filter hiện tại từ kernel module
- * và hiển thị ra màn hình dạng dễ đọc.
- */
-static int do_show_status(int fd)
-{
-	struct packet_capture_filter f;
-	char src[INET_ADDRSTRLEN], dst[INET_ADDRSTRLEN];
 
-	if (ioctl(fd, PACKET_CAPTURE_IOCTL_GET_FILTER, &f) < 0) {
-		fprintf(stderr, "ioctl GET_FILTER: %s\n", strerror(errno));
-		return 1;
-	}
-	if (!f.enabled) { printf("packet_capture: disabled\n"); return 0; }
 
-	ip_or_any(f.src_addr, src, sizeof(src));
-	ip_or_any(f.dst_addr, dst, sizeof(dst));
-	printf("packet_capture: enabled protocol=%s src=%s dst=%s direction=%s\n",
-	       proto_str(f.protocol), src, dst, dir_str(f.direction));
-	return 0;
-}
-
-/*
- * Hàm do_show_stats
- * Công dụng: Lấy thông số thống kê từ kernel (số gói đã thấy, đã match filter,
- * số gói bị ghi đè do vòng đệm đầy...) và in ra.
- */
-static int do_show_stats(int fd)
-{
-	struct packet_capture_stats s;
-
-	if (ioctl(fd, PACKET_CAPTURE_IOCTL_GET_STATS, &s) < 0) {
-		fprintf(stderr, "ioctl GET_STATS: %s\n", strerror(errno));
-		return 1;
-	}
-	printf("packets_seen:        %llu\n", (unsigned long long)s.packets_seen);
-	printf("packets_matched:     %llu\n", (unsigned long long)s.packets_matched);
-	printf("records_stored:      %llu\n", (unsigned long long)s.records_stored);
-	printf("overwritten_records: %llu\n", (unsigned long long)s.overwritten_records);
-	printf("dropped_records:     %llu\n", (unsigned long long)s.dropped_records);
-	printf("newest_seq:          %llu\n", (unsigned long long)s.newest_seq);
-	printf("buffer_count:        %u\n",   s.buffer_count);
-	printf("buffer_size:         %u\n",   s.buffer_size);
-	return 0;
-}
 
 /*
  * Hàm do_clear
@@ -598,37 +566,6 @@ static int read_batch(int fd, uint64_t *since, uint32_t limit, uint32_t *printed
 	return 0;
 }
 
-/*
- * Hàm do_read
- * Công dụng: Xử lý lệnh `capturectl read [--since <seq>] [--limit <n>]`.
- * Nó liên tục gọi hàm read_batch cho tới khi đọc đủ giới hạn hoặc không còn 
- * gói nào mới để đọc (kernel trả về 0 gói).
- */
-static int do_read(int fd, int argc, char **argv)
-{
-	uint64_t since = 0;
-	uint32_t limit = PACKET_CAPTURE_MAX_READ;
-	uint32_t printed = 0;
-	int i;
-
-	for (i = 2; i < argc; i++) {
-		if (!strcmp(argv[i], "--since") && i + 1 < argc) {
-			if (parse_u64(argv[++i], &since) < 0) return -1;
-		} else if (!strcmp(argv[i], "--limit") && i + 1 < argc) {
-			if (parse_u32_range(argv[++i], 1, 100000, &limit) < 0) return -1;
-		} else return -1;
-	}
-
-	print_record_header();
-	while (printed < limit) {
-		uint32_t before = printed;
-		uint32_t batch  = limit - printed;
-		if (batch > PACKET_CAPTURE_MAX_READ) batch = PACKET_CAPTURE_MAX_READ;
-		if (read_batch(fd, &since, batch, &printed) != 0) return 1;
-		if (printed == before) break;
-	}
-	return 0;
-}
 
 /*
  * Hàm do_stream
@@ -728,11 +665,8 @@ int main(int argc, char **argv)
 	fd = open_device();
 	if (fd < 0) return 1;
 
-	if      (!strcmp(argv[1], "status") && argc == 2) ret = do_show_status(fd);
-	else if (!strcmp(argv[1], "stats")  && argc == 2) ret = do_show_stats(fd);
-	else if (!strcmp(argv[1], "clear")  && argc == 2) ret = do_clear(fd);
+	if      (!strcmp(argv[1], "clear")  && argc == 2) ret = do_clear(fd);
 	else if (!strcmp(argv[1], "set"))                 ret = do_set_filter(fd, argc, argv);
-	else if (!strcmp(argv[1], "read"))                ret = do_read(fd, argc, argv);
 	else if (!strcmp(argv[1], "stream"))              ret = do_stream(fd, argc, argv);
 	else if (!strcmp(argv[1], "detail"))              ret = do_detail(fd, argc, argv);
 	else                                              ret = -1;
